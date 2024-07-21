@@ -38,8 +38,7 @@ class UDPNode:
             'message': message
         })
         self.sock.sendto(msg.encode(), ('localhost', recipient_port))
-        with self.print_lock:
-            print(f"[PrivateMessaging] Node {self.node_id} sent message: '{message}' with lamport timestamp {self.lamport_clock} to port {recipient_port} (Recipient Node: {self._get_node_id_from_port(recipient_port)})")
+        self._print(f"[PrivateMessaging] Node {self.node_id} sent message: '{message}' with lamport timestamp {self.lamport_clock} to port {recipient_port} (Recipient Node: {self._get_node_id_from_port(recipient_port)})")
 
     def broadcast_message(self, message):
         self.increment_vector_clock()  # Increment vector clock before broadcasting
@@ -52,8 +51,7 @@ class UDPNode:
         for port in range(13000, 13010):
             if port != self.port:
                 self.sock.sendto(msg.encode(), ('localhost', port))
-        with self.print_lock:
-            print(f"[Broadcast] Node {self.node_id} broadcasted message: '{message}' with vector timestamp {self.vector_clock}")
+        self._print(f"[Broadcast] Node {self.node_id} broadcasted message: '{message}' with vector timestamp {self.vector_clock}")
 
         # Gossip to 3 random nodes
         self.gossip_message(message)
@@ -74,8 +72,7 @@ class UDPNode:
                     'message': message
                 })
                 self.sock.sendto(msg.encode(), ('localhost', port))
-                with self.print_lock:
-                    print(f"[Gossip] Node {self.node_id} gossiped message: '{message}' to port {port} (Recipient Node: {self._get_node_id_from_port(port)})")
+                self._print(f"[Gossip] Node {self.node_id} gossiped message: '{message}' to port {port} (Recipient Node: {self._get_node_id_from_port(port)})")
 
     def listen(self):
         while self.running:
@@ -89,35 +86,35 @@ class UDPNode:
                         self.handle_broadcast_message(message, addr)
             except Exception as e:
                 if self.running:  # Ignore exceptions if we are not running
-                    with self.print_lock:
-                        print(f"Node {self.node_id} encountered an error: {e}")
+                    self._print(f"Node {self.node_id} encountered an error: {e}")
                 break
 
     def handle_private_message(self, message, addr):
         # Update Lamport clock
         self.lamport_clock = max(self.lamport_clock, message['lamport_timestamp']) + 1
-        with self.print_lock:
-            print(f"[PrivateMessaging] Node {self.node_id} received private message: '{message['message']}' with lamport timestamp {message['lamport_timestamp']} from {addr} (Sender Node: {message['node_id']})")
+        self._print(f"[PrivateMessaging] Node {self.node_id} received private message: '{message['message']}' with lamport timestamp {message['lamport_timestamp']} from {addr} (Sender Node: {message['node_id']})")
 
     def handle_broadcast_message(self, message, addr):
         received_vector = message['vector_timestamp']
         # Update the vector clock to be at least as large as the received vector timestamp
         self.vector_clock = [max(self.vector_clock[i], received_vector[i]) for i in range(self.total_nodes)]
         self.increment_vector_clock()
-        with self.print_lock:
-            print(f"[Broadcast] Node {self.node_id} received broadcast message: '{message['message']}' with vector timestamp {received_vector} from {addr} (Sender Node: {message['node_id']})")
+        self._print(f"[Broadcast] Node {self.node_id} received broadcast message: '{message['message']}' with vector timestamp {received_vector} from {addr} (Sender Node: {message['node_id']})")
         # After receiving a broadcast, gossip to random nodes
         self.gossip_message(message['message'])
 
     def _get_node_id_from_port(self, port):
         return port - 13000  # Calculate node ID from port number
 
+    def _print(self, msg):
+        with self.print_lock:
+            print(msg)
+
     def close(self):
         self.running = False
         self.sock.close()
         self.listener_thread.join()
-        with self.print_lock:
-            print(f"Node {self.node_id} closed socket")
+        self._print(f"Node {self.node_id} closed socket")
 
 if __name__ == "__main__":
     total_nodes = 10
