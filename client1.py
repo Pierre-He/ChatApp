@@ -16,7 +16,8 @@ class UDPNode:
         self.lamport_clock = 0
         self.vector_clock = [0] * total_nodes
         self.gossiped_to = set()  # To keep track of gossiped nodes
-        print(f"Node {self.node_id} bound to port {self.port}")
+        self.print_lock = threading.Lock()  # Mutex for synchronized printing
+        print(f"[Node {self.node_id}] bound to port {self.port}")
 
         # Start listening thread
         self.listener_thread = threading.Thread(target=self.listen)
@@ -37,7 +38,8 @@ class UDPNode:
             'message': message
         })
         self.sock.sendto(msg.encode(), ('localhost', recipient_port))
-        print(f"[PrivateMessaging] Node {self.node_id} sent message: '{message}' with lamport timestamp {self.lamport_clock} to port {recipient_port} (Recipient Node: {self._get_node_id_from_port(recipient_port)})")
+        with self.print_lock:
+            print(f"[PrivateMessaging] Node {self.node_id} sent message: '{message}' with lamport timestamp {self.lamport_clock} to port {recipient_port} (Recipient Node: {self._get_node_id_from_port(recipient_port)})")
 
     def broadcast_message(self, message):
         self.increment_vector_clock()  # Increment vector clock before broadcasting
@@ -50,7 +52,8 @@ class UDPNode:
         for port in range(13000, 13010):
             if port != self.port:
                 self.sock.sendto(msg.encode(), ('localhost', port))
-        print(f"[Broadcast] Node {self.node_id} broadcasted message: '{message}' with vector timestamp {self.vector_clock}")
+        with self.print_lock:
+            print(f"[Broadcast] Node {self.node_id} broadcasted message: '{message}' with vector timestamp {self.vector_clock}")
 
         # Gossip to 3 random nodes
         self.gossip_message(message)
@@ -63,8 +66,16 @@ class UDPNode:
         for port in random_ports:
             if port not in self.gossiped_to:
                 self.gossiped_to.add(port)  # Mark this port as gossiped to
-                self.send_message(message, port)
-                print(f"[Gossip] Node {self.node_id} gossiped message: '{message}' to port {port} (Recipient Node: {self._get_node_id_from_port(port)})")
+                self.increment_vector_clock()  # Ensure vector clock is incremented for gossip
+                msg = json.dumps({
+                    'node_id': self.node_id,
+                    'type': 'broadcast',
+                    'vector_timestamp': self.vector_clock,
+                    'message': message
+                })
+                self.sock.sendto(msg.encode(), ('localhost', port))
+                with self.print_lock:
+                    print(f"[Gossip] Node {self.node_id} gossiped message: '{message}' to port {port} (Recipient Node: {self._get_node_id_from_port(port)})")
 
     def listen(self):
         while self.running:
@@ -78,20 +89,23 @@ class UDPNode:
                         self.handle_broadcast_message(message, addr)
             except Exception as e:
                 if self.running:  # Ignore exceptions if we are not running
-                    print(f"Node {self.node_id} encountered an error: {e}")
+                    with self.print_lock:
+                        print(f"Node {self.node_id} encountered an error: {e}")
                 break
 
     def handle_private_message(self, message, addr):
         # Update Lamport clock
         self.lamport_clock = max(self.lamport_clock, message['lamport_timestamp']) + 1
-        print(f"[PrivateMessaging] Node {self.node_id} received private message: '{message['message']}' with lamport timestamp {message['lamport_timestamp']} from {addr} (Sender Node: {message['node_id']})")
+        with self.print_lock:
+            print(f"[PrivateMessaging] Node {self.node_id} received private message: '{message['message']}' with lamport timestamp {message['lamport_timestamp']} from {addr} (Sender Node: {message['node_id']})")
 
     def handle_broadcast_message(self, message, addr):
         received_vector = message['vector_timestamp']
         # Update the vector clock to be at least as large as the received vector timestamp
         self.vector_clock = [max(self.vector_clock[i], received_vector[i]) for i in range(self.total_nodes)]
         self.increment_vector_clock()
-        print(f"[Broadcast] Node {self.node_id} received broadcast message: '{message['message']}' with vector timestamp {received_vector} from {addr} (Sender Node: {message['node_id']})")
+        with self.print_lock:
+            print(f"[Broadcast] Node {self.node_id} received broadcast message: '{message['message']}' with vector timestamp {received_vector} from {addr} (Sender Node: {message['node_id']})")
         # After receiving a broadcast, gossip to random nodes
         self.gossip_message(message['message'])
 
@@ -102,7 +116,8 @@ class UDPNode:
         self.running = False
         self.sock.close()
         self.listener_thread.join()
-        print(f"Node {self.node_id} closed socket")
+        with self.print_lock:
+            print(f"Node {self.node_id} closed socket")
 
 if __name__ == "__main__":
     total_nodes = 10
@@ -110,9 +125,6 @@ if __name__ == "__main__":
     nodes = [UDPNode(node_id=i, port=port, total_nodes=total_nodes) for i, port in enumerate(ports)]
 
     # Example interactions
-    #nodes[0].send_message("Hello from Node 0", ports[1])  # Send message to Node 1
-    #nodes[0].broadcast_message("Hey all, I'm Node Zero!") #broadcast from 0
- 
     nodes[0].broadcast_message("This is a general message from Node Zero!")
 
     time.sleep(2)
