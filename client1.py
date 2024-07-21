@@ -8,6 +8,7 @@ class UDPNode:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(('localhost', self.port))
         self.address = ('localhost', self.port)
+        self.running = True
         print(f"Node {self.node_id} bound to port {self.port}")
 
         # Start listening thread
@@ -15,12 +16,14 @@ class UDPNode:
         self.listener_thread.start()
 
     def listen(self):
-        while True:
+        while self.running:
             try:
                 data, addr = self.sock.recvfrom(1024)  # Buffer size is 1024 bytes
-                print(f"Node {self.node_id} received message: {data.decode()} from {addr}")
+                if data:
+                    print(f"Node {self.node_id} received message: {data.decode()} from {addr}")
             except Exception as e:
-                print(f"Node {self.node_id} encountered an error: {e}")
+                if self.running:  # Ignore exceptions if we are not running
+                    print(f"Node {self.node_id} encountered an error: {e}")
                 break
 
     # Send private message
@@ -36,9 +39,10 @@ class UDPNode:
         print(f"Node {self.node_id} broadcasted message: {message}")
 
     def close(self):
+        self.running = False
         self.sock.close()
+        self.listener_thread.join()
         print(f"Node {self.node_id} closed socket")
-
 
 if __name__ == "__main__":
     # Specify the ports directly
