@@ -29,7 +29,7 @@ class UDPNode:
         self.vector_clock[self.node_id] += 1
 
     def send_message(self, message, recipient_port):
-        self.increment_lamport_clock()
+        self.increment_lamport_clock()  # Increment before sending
         msg = json.dumps({
             'node_id': self.node_id,
             'type': 'private',
@@ -37,10 +37,10 @@ class UDPNode:
             'message': message
         })
         self.sock.sendto(msg.encode(), ('localhost', recipient_port))
-        print(f"[PrivateMessaging] Node {self.node_id} sent message: '{message}' with lamport timestamp {self.lamport_clock} to port {recipient_port}")
+        print(f"[PrivateMessaging] Node {self.node_id} sent message: '{message}' with lamport timestamp {self.lamport_clock} to port {recipient_port} (Recipient Node: {self._get_node_id_from_port(recipient_port)})")
 
     def broadcast_message(self, message):
-        self.increment_vector_clock()
+        self.increment_vector_clock()  # Increment vector clock before broadcasting
         msg = json.dumps({
             'node_id': self.node_id,
             'type': 'broadcast',
@@ -64,7 +64,7 @@ class UDPNode:
             if port not in self.gossiped_to:
                 self.gossiped_to.add(port)  # Mark this port as gossiped to
                 self.send_message(message, port)
-                print(f"[Gossip] Node {self.node_id} gossiped message: '{message}' to port {port}")
+                print(f"[Gossip] Node {self.node_id} gossiped message: '{message}' to port {port} (Recipient Node: {self._get_node_id_from_port(port)})")
 
     def listen(self):
         while self.running:
@@ -82,18 +82,21 @@ class UDPNode:
                 break
 
     def handle_private_message(self, message, addr):
-        # Update the Lamport clock to be at least as large as the received timestamp
+        # Update Lamport clock
         self.lamport_clock = max(self.lamport_clock, message['lamport_timestamp']) + 1
-        print(f"[PrivateMessaging] Node {self.node_id} received private message: '{message['message']}' with lamport timestamp {message['lamport_timestamp']} from {addr}")
+        print(f"[PrivateMessaging] Node {self.node_id} received private message: '{message['message']}' with lamport timestamp {message['lamport_timestamp']} from {addr} (Sender Node: {message['node_id']})")
 
     def handle_broadcast_message(self, message, addr):
         received_vector = message['vector_timestamp']
         # Update the vector clock to be at least as large as the received vector timestamp
         self.vector_clock = [max(self.vector_clock[i], received_vector[i]) for i in range(self.total_nodes)]
         self.increment_vector_clock()
-        print(f"[Broadcast] Node {self.node_id} received broadcast message: '{message['message']}' with vector timestamp {received_vector} from {addr}")
+        print(f"[Broadcast] Node {self.node_id} received broadcast message: '{message['message']}' with vector timestamp {received_vector} from {addr} (Sender Node: {message['node_id']})")
         # After receiving a broadcast, gossip to random nodes
         self.gossip_message(message['message'])
+
+    def _get_node_id_from_port(self, port):
+        return port - 13000  # Calculate node ID from port number
 
     def close(self):
         self.running = False
